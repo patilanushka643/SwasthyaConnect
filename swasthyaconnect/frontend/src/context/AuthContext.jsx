@@ -3,18 +3,15 @@ import axios from 'axios';
 
 /**
  * Determine API base URL based on environment
- * - Production: Use VITE_API_URL environment variable
- * - Development: Default to localhost:5000
+ * - Production & Development: Use VITE_API_URL environment variable
+ * - Fallback: `/api/v1` (assumes same-origin or env-provided dev URL)
  */
 const getAPIBaseURL = () => {
   const envURL = import.meta.env.VITE_API_URL;
-  const isDevelopment = import.meta.env.DEV;
-
   if (envURL) {
     return envURL.endsWith('/api/v1') ? envURL : `${envURL}/api/v1`;
   }
-
-  return isDevelopment ? 'http://localhost:5000/api/v1' : '/api/v1';
+  return '/api/v1';
 };
 
 const API_BASE_URL = getAPIBaseURL();
