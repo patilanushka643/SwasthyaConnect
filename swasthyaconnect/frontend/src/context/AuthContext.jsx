@@ -14,6 +14,16 @@ const getAPIBaseURL = () => {
   return '/api/v1';
 };
 
+const getStoredJSON = (key) => {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : null;
+  } catch (_error) {
+    localStorage.removeItem(key);
+    return null;
+  }
+};
+
 const API_BASE_URL = getAPIBaseURL();
 
 const AuthContext = createContext(null);
@@ -21,11 +31,8 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('sc_token') || '');
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('sc_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [token, setToken] = useState(() => localStorage.getItem('sc_token') || '');
+  const [user, setUser] = useState(() => getStoredJSON('sc_user'));
   const [loading, setLoading] = useState(false);
 
   const api = useMemo(() => {
@@ -111,7 +118,7 @@ export const AuthProvider = ({ children }) => {
         api,
         token,
         user,
-        isAuthenticated: Boolean(token && user),
+        isAuthenticated: Boolean(token && user?.role),
         loading,
         login,
         signup,

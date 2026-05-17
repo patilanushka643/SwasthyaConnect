@@ -10,7 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 const RoleLanding = () => {
   const { user } = useAuth();
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user?.role) return <Navigate to="/login" replace />;
   return <Navigate to={`/${user.role}`} replace />;
 };
 
