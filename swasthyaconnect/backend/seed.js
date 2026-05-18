@@ -33,6 +33,7 @@ const seedDatabase = async () => {
         role: 'patient',
         name: 'Rajesh Kumar',
         phone: '9876543210',
+        mobileNumber: '9876543210',
       },
       {
         email: 'patient2@swasthya.com',
@@ -40,6 +41,7 @@ const seedDatabase = async () => {
         role: 'patient',
         name: 'Priya Sharma',
         phone: '9876543211',
+        mobileNumber: '9876543211',
       },
       {
         email: 'doctor1@swasthya.com',
@@ -48,6 +50,7 @@ const seedDatabase = async () => {
         name: 'Dr. Vikram Verma',
         specialization: 'Cardiology',
         phone: '9876543220',
+        mobileNumber: '9876543220',
       },
       {
         email: 'doctor2@swasthya.com',
@@ -56,6 +59,7 @@ const seedDatabase = async () => {
         name: 'Dr. Anjali Singh',
         specialization: 'Orthopedics',
         phone: '9876543221',
+        mobileNumber: '9876543221',
       },
       {
         email: 'admin@swasthya.com',
@@ -63,6 +67,7 @@ const seedDatabase = async () => {
         role: 'admin',
         name: 'Admin User',
         phone: '9876543230',
+        mobileNumber: '9876543230',
       },
     ]);
 

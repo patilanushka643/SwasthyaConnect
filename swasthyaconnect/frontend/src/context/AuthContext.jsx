@@ -105,6 +105,28 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const requestOtp = async ({ mobileNumber, role }) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/otp/request', { mobileNumber, role });
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async ({ challengeId, otp, mobileNumber, role }) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/otp/verify', { challengeId, otp, mobileNumber, role });
+      setToken(data.token);
+      setUser(data.user);
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     setToken('');
     setUser(null);
@@ -122,6 +144,8 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         signup,
+        requestOtp,
+        verifyOtp,
         logout,
       }}
     >

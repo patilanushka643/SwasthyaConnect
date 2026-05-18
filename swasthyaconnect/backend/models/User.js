@@ -40,11 +40,30 @@ const userSchema = new mongoose.Schema(
       default: '',
       maxlength: 20,
     },
+    mobileNumber: {
+      type: String,
+      trim: true,
+      default: undefined,
+      index: true,
+    },
+    authMethod: {
+      type: String,
+      enum: ['email', 'otp'],
+      default: 'email',
+    },
+    profileStatus: {
+      type: String,
+      enum: ['active', 'pending'],
+      default: 'active',
+      index: true,
+    },
   },
   {
     timestamps: true,
     versionKey: false,
   }
 );
+
+userSchema.index({ role: 1, mobileNumber: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('User', userSchema);
