@@ -5,8 +5,8 @@
 @tailwind utilities;
 
 :root {
-  --bg-main: #f4fbff;
-  --text-main: #0f172a;
+  --bg-main: #ffffff;
+  --text-main: #111827;
 }
 
 * {
@@ -16,9 +16,9 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: 'Manrope', sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   color: var(--text-main);
-  background: radial-gradient(circle at 10% 10%, #c7f9ff 0%, #f4fbff 40%, #fefce8 100%);
+  background: #ffffff;
 }
 
 h1,
@@ -27,20 +27,7 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: 'Space Grotesk', sans-serif;
   margin: 0;
-}
-
-.bg-grid-pattern {
-  background-image:
-    linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
-    radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 45%);
-  background-size: 24px 24px, 24px 24px, 100% 100%;
-}
-
-.bg-login-gradient {
-  background: linear-gradient(120deg, #e0f2fe 0%, #fef9c3 50%, #e2e8f0 100%);
 }
 
 @layer components {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 /**
@@ -134,6 +134,11 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('sc_user');
   };
 
+  const setSession = ({ token: nextToken, user: nextUser }) => {
+    setToken(nextToken || '');
+    setUser(nextUser || null);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -147,6 +152,7 @@ export const AuthProvider = ({ children }) => {
         requestOtp,
         verifyOtp,
         logout,
+        setSession,
       }}
     >
       {children}
