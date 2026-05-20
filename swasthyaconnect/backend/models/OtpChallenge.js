@@ -2,19 +2,20 @@ const mongoose = require('mongoose');
 
 const otpChallengeSchema = new mongoose.Schema(
   {
-    mobileNumber: {
+    email: {
       type: String,
       required: true,
+      lowercase: true,
       trim: true,
       index: true,
     },
     role: {
       type: String,
-      enum: ['patient', 'doctor'],
+      enum: ['patient', 'doctor', 'admin'],
       required: true,
       index: true,
     },
-    otpHash: {
+    otp: {
       type: String,
       required: true,
       select: false,
@@ -23,22 +24,6 @@ const otpChallengeSchema = new mongoose.Schema(
       type: Date,
       required: true,
       index: { expires: 0 },
-    },
-    resendAvailableAt: {
-      type: Date,
-      required: true,
-    },
-    attempts: {
-      type: Number,
-      default: 0,
-    },
-    verifiedAt: {
-      type: Date,
-      default: null,
-    },
-    onboardingRequired: {
-      type: Boolean,
-      default: false,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -52,6 +37,6 @@ const otpChallengeSchema = new mongoose.Schema(
   }
 );
 
-otpChallengeSchema.index({ mobileNumber: 1, role: 1, createdAt: -1 });
+otpChallengeSchema.index({ email: 1, role: 1, createdAt: -1 });
 
 module.exports = mongoose.model('OtpChallenge', otpChallengeSchema);

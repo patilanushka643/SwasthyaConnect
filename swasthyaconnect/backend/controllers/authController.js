@@ -1,18 +1,65 @@
+require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const Brevo = require('@getbrevo/brevo');
 const User = require('../models/User');
 const OtpChallenge = require('../models/OtpChallenge');
-const {
-  OTP_EXPIRY_SECONDS,
-  OTP_RESEND_WINDOW_SECONDS,
-  buildPlaceholderCredentials,
-  generateOtpCode,
-  hashOtp,
-  normalizeMobileNumber,
-  normalizeRole,
-  sendOtpNotification,
-} = require('../utils/otpService');
+
+const OTP_LENGTH = 6;
+const OTP_EXPIRY_SECONDS = 300;
+const OTP_COUNTDOWN_SECONDS = 180;
+const OTP_ATTEMPT_LIMIT = 5;
+
+const ROLE_ALIASES = {
+  patient: 'patient',
+  staff: 'doctor',
+  doctor: 'doctor',
+  admin: 'admin',
+};
+
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+
+const normalizeRole = (role) => {
+  if (!role) {
+    return null;
+  }
+
+  return ROLE_ALIASES[String(role).trim().toLowerCase()] || null;
+};
+
+const generateOtpCode = (length = OTP_LENGTH) => {
+  const max = 10 ** length;
+  return String(crypto.randomInt(0, max)).padStart(length, '0');
+};
+
+const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
+
+const buildDisplayName = (email, role) => {
+  const localPart = String(email || '')
+    .split('@')[0]
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (localPart) {
+    return localPart
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  if (role === 'doctor') {
+    return 'Swasthya Doctor';
+  }
+
+  if (role === 'admin') {
+    return 'Swasthya Admin';
+  }
+
+  return 'Swasthya Patient';
+};
 
 const signToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, {
@@ -32,25 +79,105 @@ const sanitizeUser = (user) => ({
   profileStatus: user.profileStatus,
 });
 
-const findUserByMobileAndRole = async ({ mobileNumber, role }) => {
-  return User.findOne({
-    role,
-    $or: [{ mobileNumber }, { phone: mobileNumber }],
-  });
+const getBrevoConfig = () => {
+  const apiKey = process.env.BREVO_API_KEY;
+  const senderEmail = process.env.SENDER_EMAIL || process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL;
+  const senderName = process.env.BREVO_SENDER_NAME || 'SwasthyaConnect Care';
+
+  if (!apiKey) {
+    throw new Error('BREVO_API_KEY is not configured.');
+  }
+
+  if (!senderEmail) {
+    throw new Error('SENDER_EMAIL is not configured.');
+  }
+
+  return {
+    apiKey,
+    senderEmail,
+    senderName,
+  };
 };
 
-const ensureOtpUser = async ({ mobileNumber, role, onboardingRequired }) => {
-  const existingUser = await findUserByMobileAndRole({ mobileNumber, role });
+const buildOtpEmailHtml = ({ email, otp, role }) => {
+  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'admin' ? 'Admin' : 'Patient';
+
+  return `
+    <div style="margin:0;background:#f6fbf8;padding:32px 0;font-family:Arial,Helvetica,sans-serif;color:#11322f;">
+      <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #d6e9df;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(17,50,47,0.08);">
+        <div style="background:linear-gradient(135deg,#1f7a5e,#0f4f55);padding:28px 32px;color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;opacity:0.9;">SwasthyaConnect</div>
+          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">Your secure verification code</h1>
+        </div>
+        <div style="padding:32px;">
+          <p style="margin:0 0 16px;font-size:16px;line-height:1.7;">Hello ${email},</p>
+          <p style="margin:0 0 18px;font-size:16px;line-height:1.7;">Use the one-time verification code below to sign in as <strong>${roleLabel}</strong>.</p>
+          <div style="margin:28px 0;padding:22px;border-radius:16px;background:#f0faf6;border:1px solid #bfe6d8;text-align:center;">
+            <div style="font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:#2f6f5c;margin-bottom:8px;">Verification Code</div>
+            <div style="font-size:42px;line-height:1;font-weight:700;letter-spacing:0.24em;color:#0f4f55;">${otp}</div>
+          </div>
+          <p style="margin:0;font-size:14px;line-height:1.7;color:#4c6660;">This code expires in ${Math.ceil(OTP_EXPIRY_SECONDS / 60)} minutes. If you did not request this login, you can safely ignore this email.</p>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const buildOtpEmailText = ({ email, otp, role }) => {
+  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'admin' ? 'Admin' : 'Patient';
+
+  return [
+    'SwasthyaConnect verification code',
+    '',
+    `Hello ${email},`,
+    `Use this code to sign in as ${roleLabel}: ${otp}`,
+    `This code expires in ${Math.ceil(OTP_EXPIRY_SECONDS / 60)} minutes.`,
+    'If you did not request this email, you can ignore it.',
+  ].join('\n');
+};
+
+const sendBrevoOtpEmail = async ({ email, otp, role }) => {
+  const { apiKey, senderEmail, senderName } = getBrevoConfig();
+  const apiClient = Brevo.ApiClient.instance;
+  apiClient.authentications['api-key'].apiKey = apiKey;
+
+  const transactionalEmailsApi = new Brevo.TransactionalEmailsApi();
+  const sendSmtpEmail = new Brevo.SendSmtpEmail();
+
+  sendSmtpEmail.sender = {
+    name: senderName,
+    email: senderEmail,
+  };
+  sendSmtpEmail.to = [{ email }];
+  sendSmtpEmail.subject = 'Your SwasthyaConnect verification code';
+  sendSmtpEmail.htmlContent = buildOtpEmailHtml({ email, otp, role });
+  sendSmtpEmail.textContent = buildOtpEmailText({ email, otp, role });
+
+  await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+};
+
+const findUserByEmailAndRole = async ({ email, role }) => {
+  return User.findOne({ email, role });
+};
+
+const ensureOtpUser = async ({ email, role }) => {
+  const existingUser = await User.findOne({ email });
+
+  if (existingUser && existingUser.role !== role) {
+    const error = new Error('This email is already registered with a different role.');
+    error.statusCode = 409;
+    throw error;
+  }
 
   if (existingUser) {
     const update = {};
 
-    if (!existingUser.mobileNumber) {
-      update.mobileNumber = mobileNumber;
+    if (existingUser.authMethod !== 'otp') {
+      update.authMethod = 'otp';
     }
 
-    if (!existingUser.phone) {
-      update.phone = mobileNumber;
+    if (!existingUser.name) {
+      update.name = buildDisplayName(email, role);
     }
 
     if (Object.keys(update).length > 0) {
@@ -61,18 +188,18 @@ const ensureOtpUser = async ({ mobileNumber, role, onboardingRequired }) => {
     return { user: existingUser, onboardingRequired: false };
   }
 
-  const placeholder = buildPlaceholderCredentials({ mobileNumber, role });
-  const hashedPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 12);
+  const placeholderPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 12);
 
   const user = await User.create({
-    email: placeholder.email,
-    password: hashedPassword,
+    email,
+    password: placeholderPassword,
     role,
-    name: placeholder.name,
-    phone: mobileNumber,
-    mobileNumber,
+    name: buildDisplayName(email, role),
+    specialization: '',
+    phone: '',
+    mobileNumber: undefined,
     authMethod: 'otp',
-    profileStatus: onboardingRequired ? 'pending' : 'active',
+    profileStatus: 'active',
   });
 
   return { user, onboardingRequired: true };
@@ -100,7 +227,7 @@ const signup = async (req, res, next) => {
       name,
       specialization: specialization || '',
       phone: phone || '',
-      mobileNumber: normalizeMobileNumber(mobileNumber || phone || ''),
+      mobileNumber: String(mobileNumber || phone || '').replace(/\D/g, '').slice(-10) || undefined,
       authMethod: 'email',
       profileStatus: 'active',
     });
@@ -147,137 +274,94 @@ const login = async (req, res, next) => {
   }
 };
 
-const requestOtp = async (req, res, next) => {
+const sendOtp = async (req, res, next) => {
   try {
-    const rawMobileNumber = req.body.mobileNumber;
-    const role = normalizeRole(req.body.role);
-    const mobileNumber = normalizeMobileNumber(rawMobileNumber);
+    const email = normalizeEmail(req.body?.email);
+    const role = normalizeRole(req.body?.role);
 
-    if (!mobileNumber || !role) {
-      return res.status(400).json({ message: 'mobileNumber and a valid role are required.' });
+    if (!email || !role) {
+      return res.status(400).json({ message: 'email and a valid role are required.' });
     }
 
-    const existingUser = await findUserByMobileAndRole({ mobileNumber, role });
-    const onboardingRequired = !existingUser;
+    const existingUserByRole = await findUserByEmailAndRole({ email, role });
+    const userWithSameEmail = await User.findOne({ email });
+
+    if (!existingUserByRole && userWithSameEmail && userWithSameEmail.role !== role) {
+      return res.status(409).json({ message: 'This email is already registered with a different role.' });
+    }
+
     const now = new Date();
-
-    const currentChallenge = await OtpChallenge.findOne({
-      mobileNumber,
-      role,
-      verifiedAt: null,
-      expiresAt: { $gt: now },
-    });
-
-    if (currentChallenge && currentChallenge.resendAvailableAt > now) {
-      const retryAfterSeconds = Math.max(
-        1,
-        Math.ceil((currentChallenge.resendAvailableAt.getTime() - now.getTime()) / 1000)
-      );
-
-      return res.status(429).json({
-        message: 'Please wait before requesting a new OTP.',
-        retryAfterSeconds,
-        challengeId: currentChallenge._id,
-        onboardingRequired,
-      });
-    }
-
     const otp = generateOtpCode();
     const expiresAt = new Date(now.getTime() + OTP_EXPIRY_SECONDS * 1000);
-    const resendAvailableAt = new Date(now.getTime() + OTP_RESEND_WINDOW_SECONDS * 1000);
 
-    const challenge = await OtpChallenge.findOneAndUpdate(
-      { mobileNumber, role, verifiedAt: null },
-      {
-        $set: {
-          mobileNumber,
-          role,
-          otpHash: hashOtp(otp),
-          expiresAt,
-          resendAvailableAt,
-          attempts: 0,
-          verifiedAt: null,
-          onboardingRequired,
-          userId: existingUser ? existingUser._id : null,
-        },
-      },
-      {
-        new: true,
-        upsert: true,
-      }
-    );
-
-    await sendOtpNotification({
-      mobileNumber,
+    const challenge = await OtpChallenge.create({
+      email,
       role,
       otp,
-      onboardingRequired,
+      expiresAt,
+      userId: existingUserByRole ? existingUserByRole._id : null,
     });
 
+    try {
+      await sendBrevoOtpEmail({ email, otp, role });
+    } catch (error) {
+      await OtpChallenge.deleteMany({ _id: challenge._id });
+      throw error;
+    }
+
     return res.status(200).json({
-      message: 'OTP generated successfully.',
+      message: 'Verification code sent successfully.',
       challengeId: challenge._id,
       role,
-      mobileNumber,
-      onboardingRequired,
-      expiresAt: challenge.expiresAt,
-      resendAvailableAt: challenge.resendAvailableAt,
-      resendAfterSeconds: OTP_RESEND_WINDOW_SECONDS,
-      debugOtp: process.env.NODE_ENV === 'production' ? undefined : otp,
+      email,
+      onboardingRequired: !existingUserByRole,
+      expiresAt,
+      expiresInSeconds: OTP_EXPIRY_SECONDS,
+      resendAfterSeconds: OTP_COUNTDOWN_SECONDS,
     });
   } catch (error) {
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
     next(error);
   }
 };
 
 const verifyOtp = async (req, res, next) => {
   try {
-    const { challengeId, otp, mobileNumber: rawMobileNumber, role: rawRole } = req.body;
-    const role = normalizeRole(rawRole);
-    const mobileNumber = normalizeMobileNumber(rawMobileNumber);
+    const email = normalizeEmail(req.body?.email);
+    const otp = String(req.body?.otp || req.body?.otpCode || '').replace(/\D/g, '').slice(0, OTP_LENGTH);
+    const role = normalizeRole(req.body?.role);
 
-    if (!challengeId || !otp || !mobileNumber || !role) {
-      return res.status(400).json({ message: 'challengeId, otp, mobileNumber and role are required.' });
+    if (!email || !otp || !role) {
+      return res.status(400).json({ message: 'email, otp and a valid role are required.' });
     }
 
     const challenge = await OtpChallenge.findOne({
-      _id: challengeId,
-      mobileNumber,
+      email,
       role,
-      verifiedAt: null,
-    }).select('+otpHash');
+      expiresAt: { $gt: new Date() },
+    })
+      .sort({ createdAt: -1 })
+      .select('+otp');
 
     if (!challenge) {
       return res.status(404).json({ message: 'OTP session not found or already verified.' });
     }
 
-    const now = new Date();
-
-    if (challenge.expiresAt <= now) {
-      return res.status(410).json({ message: 'OTP expired. Please request a new code.' });
-    }
-
-    if (challenge.attempts >= 5) {
-      return res.status(429).json({ message: 'Too many invalid OTP attempts. Request a new code.' });
-    }
-
-    if (challenge.otpHash !== hashOtp(otp)) {
-      challenge.attempts += 1;
-      await challenge.save();
-
+    if (String(challenge.otp) !== String(otp)) {
       return res.status(401).json({
         message: 'Invalid OTP.',
-        remainingAttempts: Math.max(0, 5 - challenge.attempts),
+        remainingAttempts: 0,
       });
     }
 
     const { user, onboardingRequired } = await ensureOtpUser({
-      mobileNumber,
+      email,
       role,
-      onboardingRequired: challenge.onboardingRequired,
     });
 
-    challenge.verifiedAt = now;
     challenge.userId = user._id;
     await challenge.save();
 
@@ -290,6 +374,10 @@ const verifyOtp = async (req, res, next) => {
       onboardingRequired,
     });
   } catch (error) {
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
     next(error);
   }
 };
@@ -309,7 +397,9 @@ const getStaff = async (_req, res, next) => {
 module.exports = {
   signup,
   login,
-  requestOtp,
+  sendOtp,
   verifyOtp,
+  requestOtp: sendOtp,
+  verifyFirebaseOtp: verifyOtp,
   getStaff,
 };
