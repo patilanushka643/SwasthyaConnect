@@ -156,18 +156,8 @@ const sendBrevoOtpEmail = async ({ email, otp, role }) => {
   await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
 };
 
-const findUserByEmailAndRole = async ({ email, role }) => {
-  return User.findOne({ email, role });
-};
-
 const ensureOtpUser = async ({ email, role }) => {
-  const existingUser = await User.findOne({ email });
-
-  if (existingUser && existingUser.role !== role) {
-    const error = new Error('This email is already registered with a different role.');
-    error.statusCode = 409;
-    throw error;
-  }
+  const existingUser = await User.findOne({ email, role });
 
   if (existingUser) {
     const update = {};
@@ -283,12 +273,7 @@ const sendOtp = async (req, res, next) => {
       return res.status(400).json({ message: 'email and a valid role are required.' });
     }
 
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser && existingUser.role !== role) {
-      return res.status(409).json({ message: 'This email is already registered with a different role.' });
-    }
-
+    const existingUser = await User.findOne({ email, role });
     const onboardingRequired = !existingUser;
 
     console.debug('[authController.sendOtp] OTP request accepted:', {
