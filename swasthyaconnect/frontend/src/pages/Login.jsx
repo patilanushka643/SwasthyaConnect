@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MedicalLogo } from '../components/UiIcons';
 
 const OTP_LENGTH = 6;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,7 +89,7 @@ export default function Login() {
     resetOtpFlow?.();
   };
 
-  const showCountdown = isOtpStep ? formatCountdown(otpCountdown) : 'Or';
+  const showCountdown = formatCountdown(otpCountdown);
   const primaryButtonLabel = isOtpStep ? 'Login' : 'Login as Patient';
   const secondaryButtonLabel = isOtpStep ? 'Enter again' : 'Staff Login';
   const secondaryButtonAction = isOtpStep ? handleEnterAgain : () => handleRequestOtp('staff');
@@ -104,51 +103,63 @@ export default function Login() {
     (!isOtpStep && !EMAIL_PATTERN.test(String(safeEmail || '').trim()));
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-black px-[7px] py-[10px] sm:px-4">
-      <div className="flex min-h-[745px] w-full max-w-[430px] flex-col items-center overflow-hidden rounded-[18px] bg-white px-6 pt-[82px] pb-10 shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
-        <div className="mb-[98px] flex h-[170px] w-[170px] items-center justify-center rounded-[22px] bg-white">
-          <MedicalLogo style={{ width: '154px', height: '154px' }} />
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-zinc-900 px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md items-center justify-center">
+        <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex flex-col items-center pt-12 pb-4">
+            <svg className="w-32 h-32 text-cyan-500 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12M6 12h12" className="text-blue-600 stroke-2" />
+            </svg>
+            <h1 className="mt-2 font-serif text-4xl font-semibold tracking-wide text-gray-800">Health Care</h1>
+          </div>
 
-        <div className="mb-[86px] flex w-full items-end gap-[10px] px-1">
-          <div className="h-[28px] w-[62px] shrink-0" aria-hidden="true" />
-          <div className="flex-1 pb-[2px]">
-            <input
-              type={isOtpStep ? 'tel' : 'email'}
-              inputMode={inputMode}
-              value={inputValue}
-              onChange={isOtpStep ? handleOtpChange : handleEmailChange}
-              placeholder={inputPlaceholder}
-              className="w-full border-b border-[#737373] bg-transparent pb-2 text-[20px] leading-none text-[#a3a3a3] placeholder:text-[#a3a3a3] focus:outline-none"
-              maxLength={isOtpStep ? OTP_LENGTH : undefined}
-              autoComplete={isOtpStep ? 'one-time-code' : 'email'}
-            />
+          <div className="px-8 pb-10 pt-6">
+            <div className="mb-6 border border-gray-400 rounded-lg px-4 py-3 shadow-sm bg-gray-50/50 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+              <input
+                type={isOtpStep ? 'tel' : 'email'}
+                inputMode={inputMode}
+                value={inputValue}
+                onChange={isOtpStep ? handleOtpChange : handleEmailChange}
+                placeholder={inputPlaceholder}
+                className="w-full bg-transparent text-base text-gray-800 placeholder:text-gray-400 focus:outline-none"
+                maxLength={isOtpStep ? OTP_LENGTH : undefined}
+                autoComplete={isOtpStep ? 'one-time-code' : 'email'}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={primaryButtonAction}
+              disabled={primaryDisabled}
+              className="mb-4 h-[72px] w-full rounded-[18px] bg-amber-500 text-[22px] font-medium text-white shadow-[0_4px_10px_rgba(0,0,0,0.16)] transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {primaryButtonLabel}
+            </button>
+
+            {isOtpStep ? (
+              <div className="mb-6 text-center text-[50px] font-normal leading-none text-[#6f6f6f]">{showCountdown}</div>
+            ) : (
+              <div className="flex items-center my-6 px-8">
+                <div className="flex-1 border-t border-gray-200"></div>
+                <span className="px-4 text-gray-400 text-sm font-medium uppercase tracking-wider">Or</span>
+                <div className="flex-1 border-t border-gray-200"></div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={secondaryButtonAction}
+              className="h-[72px] w-full rounded-[18px] bg-blue-900 text-[22px] font-medium text-white shadow-[0_4px_10px_rgba(0,0,0,0.16)] transition hover:bg-blue-950"
+            >
+              {secondaryButtonLabel}
+            </button>
+
+            {(otpError || otpMessage) && (
+              <p className="mt-5 text-center text-sm text-[#3947a8]">{otpError || otpMessage}</p>
+            )}
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={primaryButtonAction}
-          disabled={primaryDisabled}
-          className="mb-[34px] h-[72px] w-full rounded-[18px] bg-[#f4a307] text-[22px] font-medium text-white shadow-[0_4px_10px_rgba(0,0,0,0.16)] disabled:opacity-70"
-        >
-          {primaryButtonLabel}
-        </button>
-
-        <div className="mb-[26px] text-[50px] font-normal leading-none text-[#6f6f6f]">{showCountdown}</div>
-
-        <button
-          type="button"
-          onClick={secondaryButtonAction}
-          className="h-[72px] w-full rounded-[18px] bg-[#3947a8] text-[22px] font-medium text-white shadow-[0_4px_10px_rgba(0,0,0,0.16)]"
-        >
-          {secondaryButtonLabel}
-        </button>
-
-        {(otpError || otpMessage) && (
-          <p className="mt-5 text-center text-sm text-[#3947a8]">{otpError || otpMessage}</p>
-        )}
-      </div>
     </div>
   );
 }
