@@ -283,12 +283,20 @@ const sendOtp = async (req, res, next) => {
       return res.status(400).json({ message: 'email and a valid role are required.' });
     }
 
-    const existingUserByRole = await findUserByEmailAndRole({ email, role });
-    const userWithSameEmail = await User.findOne({ email });
+    const existingUser = await User.findOne({ email });
 
-    if (!existingUserByRole && userWithSameEmail && userWithSameEmail.role !== role) {
+    if (existingUser && existingUser.role !== role) {
       return res.status(409).json({ message: 'This email is already registered with a different role.' });
     }
+
+    const onboardingRequired = !existingUser;
+
+    console.debug('[authController.sendOtp] OTP request accepted:', {
+      email,
+      role,
+      existingUserId: existingUser?._id || null,
+      onboardingRequired,
+    });
 
     const now = new Date();
     const otp = generateOtpCode();
@@ -299,7 +307,7 @@ const sendOtp = async (req, res, next) => {
       role,
       otp,
       expiresAt,
-      userId: existingUserByRole ? existingUserByRole._id : null,
+      userId: existingUser ? existingUser._id : null,
     });
 
     try {
@@ -314,7 +322,7 @@ const sendOtp = async (req, res, next) => {
       challengeId: challenge._id,
       role,
       email,
-      onboardingRequired: !existingUserByRole,
+      onboardingRequired,
       expiresAt,
       expiresInSeconds: OTP_EXPIRY_SECONDS,
       resendAfterSeconds: OTP_COUNTDOWN_SECONDS,
