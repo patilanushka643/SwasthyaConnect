@@ -23,10 +23,11 @@ const secondRowCards = [
   { label: 'Self-Registration', tone: 'bg-[#e5f4e5]', icon: 'appointment' },
 ];
 
-const DashboardCard = ({ label, tone, icon }) => (
+const DashboardCard = ({ label, tone, icon, onClick }) => (
   <button
     type="button"
-    className={`h-[176px] rounded-[20px] px-4 py-4 text-left shadow-[0_3px_10px_rgba(0,0,0,0.12)] ${tone}`}
+    onClick={onClick}
+    className={`h-[176px] rounded-[20px] px-4 py-4 text-left shadow-[0_3px_10px_rgba(0,0,0,0.12)] ${tone} cursor-pointer transition-opacity hover:opacity-90 active:opacity-95`}
   >
     <div className="flex h-full flex-col items-center justify-between py-1">
       <div className="flex h-[84px] w-full items-start justify-center pt-1">
@@ -63,8 +64,7 @@ export default function DashboardPage() {
                 <AiimsLogo style={{ width: '36px', height: '36px' }} />
               </div>
               <div className="text-center leading-none">
-                <p className="font-[Georgia] text-[22px] font-bold text-black">AIIMS Bhopal</p>
-                <p className="font-[Georgia] text-[18px] font-bold italic text-[#a01414]">Swasthya</p>
+                <p className="font-[Georgia] text-[22px] font-bold text-black">SwasthyaConnect</p>
               </div>
             </div>
 
@@ -78,13 +78,13 @@ export default function DashboardPage() {
       <main className="mx-auto w-full max-w-[430px] px-2 pt-1">
         <section className="grid grid-cols-2 gap-x-3 gap-y-4 pt-0">
           {firstRowCards.map((card) => (
-            <DashboardCard key={card.label} {...card} />
+            <DashboardCard key={card.label} {...card} onClick={() => console.log('Feature clicked')} />
           ))}
         </section>
 
         <section className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4">
           {secondRowCards.map((card) => (
-            <DashboardCard key={card.label} {...card} />
+            <DashboardCard key={card.label} {...card} onClick={() => console.log('Feature clicked')} />
           ))}
         </section>
 
