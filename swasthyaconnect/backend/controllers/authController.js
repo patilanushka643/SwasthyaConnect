@@ -84,14 +84,6 @@ const getBrevoConfig = () => {
   const senderEmail = process.env.SENDER_EMAIL || process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL;
   const senderName = process.env.BREVO_SENDER_NAME || 'SwasthyaConnect Care';
 
-  if (!apiKey) {
-    throw new Error('BREVO_API_KEY is not configured.');
-  }
-
-  if (!senderEmail) {
-    throw new Error('SENDER_EMAIL is not configured.');
-  }
-
   return {
     apiKey,
     senderEmail,
@@ -138,6 +130,12 @@ const buildOtpEmailText = ({ email, otp, role }) => {
 
 const sendBrevoOtpEmail = async ({ email, otp, role }) => {
   const { apiKey, senderEmail, senderName } = getBrevoConfig();
+
+  if (!apiKey || !senderEmail) {
+    console.warn('[authController.sendBrevoOtpEmail] Brevo email configuration is incomplete. OTP challenge will still be created.');
+    return false;
+  }
+
   const apiClient = Brevo.ApiClient.instance;
   apiClient.authentications['api-key'].apiKey = apiKey;
 
@@ -154,6 +152,8 @@ const sendBrevoOtpEmail = async ({ email, otp, role }) => {
   sendSmtpEmail.textContent = buildOtpEmailText({ email, otp, role });
 
   await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+
+  return true;
 };
 
 const ensureOtpUser = async ({ email, role }) => {
@@ -296,10 +296,15 @@ const sendOtp = async (req, res, next) => {
     });
 
     try {
-      await sendBrevoOtpEmail({ email, otp, role });
+      const sent = await sendBrevoOtpEmail({ email, otp, role });
+
+      if (!sent) {
+        console.info('[authController.sendOtp] OTP challenge created without SMS delivery because Brevo config is missing.');
+      }
     } catch (error) {
+      console.error('[authController.sendOtp] Brevo SMS delivery failed:', error?.message || error);
       await OtpChallenge.deleteMany({ _id: challenge._id });
-      throw error;
+      return res.status(500).json({ message: 'Unable to send verification code right now.' });
     }
 
     return res.status(200).json({
