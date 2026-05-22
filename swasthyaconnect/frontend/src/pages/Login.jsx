@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { MedicalLogo } from '../components/UiIcons';
 
 const OTP_LENGTH = 6;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const formatCountdown = (seconds) => {
   const safeSeconds = Math.max(0, Number(seconds) || 0);
@@ -56,9 +57,18 @@ export default function Login() {
       return;
     }
 
+    const normalizedEmail = String(safeEmail || '').trim();
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      console.error('[Login] Invalid email submitted for OTP request:', normalizedEmail);
+      return;
+    }
+
     try {
-      await requestOtp?.({ email: safeEmail, role });
-    } catch (_error) {
+      console.debug('[Login] Requesting OTP', { email: normalizedEmail, role });
+      await requestOtp?.({ email: normalizedEmail, role });
+    } catch (error) {
+      console.error('[Login] OTP request failed:', error);
       // The context already stores the error message for display.
     }
   };
@@ -91,7 +101,7 @@ export default function Login() {
   const primaryDisabled =
     loading ||
     (isOtpStep && String(safeOtpCode || '').length !== OTP_LENGTH) ||
-    (!isOtpStep && !String(safeEmail || '').trim());
+    (!isOtpStep && !EMAIL_PATTERN.test(String(safeEmail || '').trim()));
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-black px-[7px] py-[10px] sm:px-4">

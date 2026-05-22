@@ -42,6 +42,11 @@ const normalizeRole = (value) => {
 
 const isValidEmail = (value) => /.+@.+\..+/.test(String(value || '').trim());
 
+const getAuthEndpoint = (path) => {
+  const baseURL = String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
+  return `${baseURL}/${String(path || '').replace(/^\//, '')}`;
+};
+
 const AuthContext = createContext(null);
 
 export const useAuth = () => useContext(AuthContext);
@@ -193,10 +198,29 @@ export const AuthProvider = ({ children }) => {
     setOtpMessage('');
 
     try {
-      const { data } = await api.post('/auth/send-otp', {
-        email: normalizedEmail,
-        role: normalizedRole,
+      const endpoint = getAuthEndpoint('/auth/send-otp');
+      console.debug('[AuthContext] Sending OTP request:', endpoint, { email: normalizedEmail, role: normalizedRole });
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: normalizedEmail, role: normalizedRole }),
       });
+
+      let data = null;
+
+      try {
+        data = await response.json();
+      } catch (_parseError) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const message = data?.message || 'Unable to send the verification code.';
+        throw new Error(message);
+      }
 
       setEmailState(normalizedEmail);
       setOtpRole(normalizedRole);
@@ -207,6 +231,7 @@ export const AuthProvider = ({ children }) => {
 
       return data;
     } catch (error) {
+      console.error('[AuthContext] OTP request error:', error);
       setOtpError(error?.response?.data?.message || error?.message || 'Unable to send the verification code.');
       throw error;
     } finally {

@@ -14,7 +14,10 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || '*',
+    origin: [
+      'https://swasthya-connect-pearl.vercel.app',
+      process.env.CLIENT_URL || 'http://localhost:5173',
+    ],
     credentials: true,
   },
 });
@@ -31,8 +34,12 @@ io.on('connection', (socket) => {
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || '*',
+    origin: [
+      'https://swasthya-connect-pearl.vercel.app',
+      process.env.CLIENT_URL || 'http://localhost:5173',
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 );
 app.use(express.json({ limit: '1mb' }));
