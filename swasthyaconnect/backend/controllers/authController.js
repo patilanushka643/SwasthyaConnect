@@ -2,7 +2,6 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const Brevo = require('@getbrevo/brevo');
 const User = require('../models/User');
 const OtpChallenge = require('../models/OtpChallenge');
 
@@ -26,11 +25,6 @@ const normalizeRole = (role) => {
   }
 
   return ROLE_ALIASES[String(role).trim().toLowerCase()] || null;
-};
-
-const generateOtpCode = (length = OTP_LENGTH) => {
-  const max = 10 ** length;
-  return String(crypto.randomInt(0, max)).padStart(length, '0');
 };
 
 const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
@@ -78,83 +72,6 @@ const sanitizeUser = (user) => ({
   authMethod: user.authMethod,
   profileStatus: user.profileStatus,
 });
-
-const getBrevoConfig = () => {
-  const apiKey = process.env.BREVO_API_KEY;
-  const senderEmail = process.env.SENDER_EMAIL || process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL;
-  const senderName = process.env.BREVO_SENDER_NAME || 'SwasthyaConnect Care';
-
-  return {
-    apiKey,
-    senderEmail,
-    senderName,
-  };
-};
-
-const buildOtpEmailHtml = ({ email, otp, role }) => {
-  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'admin' ? 'Admin' : 'Patient';
-
-  return `
-    <div style="margin:0;background:#f6fbf8;padding:32px 0;font-family:Arial,Helvetica,sans-serif;color:#11322f;">
-      <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #d6e9df;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(17,50,47,0.08);">
-        <div style="background:linear-gradient(135deg,#1f7a5e,#0f4f55);padding:28px 32px;color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;opacity:0.9;">SwasthyaConnect</div>
-          <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">Your secure verification code</h1>
-        </div>
-        <div style="padding:32px;">
-          <p style="margin:0 0 16px;font-size:16px;line-height:1.7;">Hello ${email},</p>
-          <p style="margin:0 0 18px;font-size:16px;line-height:1.7;">Use the one-time verification code below to sign in as <strong>${roleLabel}</strong>.</p>
-          <div style="margin:28px 0;padding:22px;border-radius:16px;background:#f0faf6;border:1px solid #bfe6d8;text-align:center;">
-            <div style="font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:#2f6f5c;margin-bottom:8px;">Verification Code</div>
-            <div style="font-size:42px;line-height:1;font-weight:700;letter-spacing:0.24em;color:#0f4f55;">${otp}</div>
-          </div>
-          <p style="margin:0;font-size:14px;line-height:1.7;color:#4c6660;">This code expires in ${Math.ceil(OTP_EXPIRY_SECONDS / 60)} minutes. If you did not request this login, you can safely ignore this email.</p>
-        </div>
-      </div>
-    </div>
-  `;
-};
-
-const buildOtpEmailText = ({ email, otp, role }) => {
-  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'admin' ? 'Admin' : 'Patient';
-
-  return [
-    'SwasthyaConnect verification code',
-    '',
-    `Hello ${email},`,
-    `Use this code to sign in as ${roleLabel}: ${otp}`,
-    `This code expires in ${Math.ceil(OTP_EXPIRY_SECONDS / 60)} minutes.`,
-    'If you did not request this email, you can ignore it.',
-  ].join('\n');
-};
-
-const sendBrevoOtpEmail = async ({ email, otp, role }) => {
-  const { apiKey, senderEmail, senderName } = getBrevoConfig();
-
-  if (!apiKey || !senderEmail) {
-    console.warn('[authController.sendBrevoOtpEmail] Brevo email configuration is incomplete. OTP challenge will still be created.');
-    return false;
-  }
-
-  const apiClient = Brevo.ApiClient.instance;
-  apiClient.authentications['api-key'].apiKey = apiKey;
-
-  const transactionalEmailsApi = new Brevo.TransactionalEmailsApi();
-  const sendSmtpEmail = new Brevo.SendSmtpEmail();
-
-  sendSmtpEmail.sender = {
-    name: senderName,
-    email: senderEmail,
-  };
-  sendSmtpEmail.to = [{ email }];
-  sendSmtpEmail.subject = 'Your SwasthyaConnect verification code';
-  sendSmtpEmail.htmlContent = buildOtpEmailHtml({ email, otp, role });
-  sendSmtpEmail.textContent = buildOtpEmailText({ email, otp, role });
-
-  await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
-
-  return true;
-};
 
 const ensureOtpUser = async ({ email, role }) => {
   const existingUser = await User.findOne({ email, role });
@@ -266,44 +183,84 @@ const login = async (req, res, next) => {
 
 const sendOtp = async (req, res, next) => {
   try {
-    const email = normalizeEmail(req.body?.email);
+    const email = String(req.body?.email || '');
     const role = normalizeRole(req.body?.role);
+    const normalizedEmail = email.toLowerCase().trim();
 
-    if (!email || !role) {
+    if (!normalizedEmail || !role) {
       return res.status(400).json({ message: 'email and a valid role are required.' });
     }
 
-    const existingUser = await User.findOne({ email, role });
+    const existingUser = await User.findOne({ email: normalizedEmail, role });
     const onboardingRequired = !existingUser;
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_SECONDS * 1000);
 
     console.debug('[authController.sendOtp] OTP request accepted:', {
-      email,
+      email: normalizedEmail,
       role,
       existingUserId: existingUser?._id || null,
       onboardingRequired,
     });
 
-    const now = new Date();
-    const otp = generateOtpCode();
-    const expiresAt = new Date(now.getTime() + OTP_EXPIRY_SECONDS * 1000);
-
-    const challenge = await OtpChallenge.create({
-      email,
-      role,
-      otp,
-      expiresAt,
-      userId: existingUser ? existingUser._id : null,
-    });
+    const challenge = await OtpChallenge.findOneAndUpdate(
+      {
+        email: normalizedEmail,
+        role,
+      },
+      {
+        $set: {
+          email: normalizedEmail,
+          role,
+          otp: generatedOtp,
+          expiresAt,
+          userId: existingUser ? existingUser._id : null,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      }
+    );
 
     try {
-      const sent = await sendBrevoOtpEmail({ email, otp, role });
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'api-key': String(process.env.BREVO_API_KEY || '').trim(),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { email: String(process.env.SENDER_EMAIL || '').trim(), name: 'Swasthya Connect' },
+          to: [{ email: normalizedEmail }],
+          subject: 'Your SwasthyaConnect Verification Code',
+          htmlContent: `<h3>Your OTP Verification code is: <strong>${generatedOtp}</strong></h3><p>This code is valid for 5 minutes.</p>`,
+        }),
+      });
 
-      if (!sent) {
-        console.info('[authController.sendOtp] OTP challenge created without SMS delivery because Brevo config is missing.');
+      let responseData = null;
+
+      try {
+        responseData = await response.json();
+      } catch (_parseError) {
+        responseData = null;
       }
+
+      if (!response.ok) {
+        console.error('Brevo REST API Error Details:', responseData);
+        throw new Error('Brevo failed to dispatch raw email payload.');
+      }
+
+      console.info('[authController.sendOtp] Brevo REST request completed successfully:', {
+        challengeId: challenge?._id,
+        email: normalizedEmail,
+        role,
+      });
     } catch (error) {
-      console.error('[authController.sendOtp] Brevo SMS delivery failed:', error?.message || error);
-      await OtpChallenge.deleteMany({ _id: challenge._id });
+      console.error('[authController.sendOtp] Brevo REST dispatch failed:', error?.message || error);
+      await OtpChallenge.deleteOne({ _id: challenge?._id });
       return res.status(500).json({ message: 'Unable to send verification code right now.' });
     }
 
@@ -311,7 +268,7 @@ const sendOtp = async (req, res, next) => {
       message: 'Verification code sent successfully.',
       challengeId: challenge._id,
       role,
-      email,
+      email: normalizedEmail,
       onboardingRequired,
       expiresAt,
       expiresInSeconds: OTP_EXPIRY_SECONDS,
