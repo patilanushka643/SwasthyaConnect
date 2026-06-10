@@ -11,6 +11,25 @@ const apiRouter = require('./routes/api');
 
 const app = express();
 const server = http.createServer(app);
+const socketConsultationMap = new Map();
+
+const getConsultationRoomSize = (io, consultationId) => {
+  const room = io.sockets.adapter.rooms.get(consultationId);
+
+  return room ? room.size : 0;
+};
+
+const getConsultationId = (socket, payload) => String(payload?.consultationId || socket.data.consultationId || '').trim();
+
+const clearSocketConsultation = (socket) => {
+  const consultationId = socket.data.consultationId;
+
+  if (consultationId && socketConsultationMap.get(consultationId) === socket.id) {
+    socketConsultationMap.delete(consultationId);
+  }
+
+  socket.data.consultationId = null;
+};
 
 const io = new Server(server, {
   cors: {
@@ -27,7 +46,112 @@ app.set('io', io);
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
+  socket.on('join-consultation', (payload = {}) => {
+    const consultationId = String(payload?.consultationId || '').trim();
+
+    if (!consultationId) {
+      socket.emit('consultation-error', { message: 'consultationId is required.' });
+      return;
+    }
+
+    if (socket.data.consultationId && socket.data.consultationId !== consultationId) {
+      socket.leave(socket.data.consultationId);
+    }
+
+    socket.join(consultationId);
+    socket.data.consultationId = consultationId;
+    socketConsultationMap.set(consultationId, socket.id);
+
+    const participantCount = getConsultationRoomSize(io, consultationId);
+
+    socket.emit('consultation-joined', {
+      consultationId,
+      participantCount,
+      socketId: socket.id,
+    });
+
+    socket.to(consultationId).emit('consultation-peer-joined', {
+      consultationId,
+      participantCount,
+      socketId: socket.id,
+    });
+  });
+
+  socket.on('video-offer', (payload = {}) => {
+    const consultationId = getConsultationId(socket, payload);
+
+    if (!consultationId) {
+      return;
+    }
+
+    socket.to(consultationId).emit('video-offer', {
+      ...payload,
+      consultationId,
+      senderSocketId: socket.id,
+    });
+  });
+
+  socket.on('video-answer', (payload = {}) => {
+    const consultationId = getConsultationId(socket, payload);
+
+    if (!consultationId) {
+      return;
+    }
+
+    socket.to(consultationId).emit('video-answer', {
+      ...payload,
+      consultationId,
+      senderSocketId: socket.id,
+    });
+  });
+
+  socket.on('ice-candidate', (payload = {}) => {
+    const consultationId = getConsultationId(socket, payload);
+
+    if (!consultationId) {
+      return;
+    }
+
+    socket.to(consultationId).emit('ice-candidate', {
+      ...payload,
+      consultationId,
+      senderSocketId: socket.id,
+    });
+  });
+
+  socket.on('end-call', (payload = {}) => {
+    const consultationId = getConsultationId(socket, payload);
+    const roomId = consultationId || socket.data.consultationId;
+
+    if (!roomId) {
+      return;
+    }
+
+    socket.to(roomId).emit('end-call', {
+      consultationId: roomId,
+      senderSocketId: socket.id,
+    });
+
+    socket.leave(roomId);
+    socket.data.consultationId = null;
+
+    if (socketConsultationMap.get(roomId) === socket.id) {
+      socketConsultationMap.delete(roomId);
+    }
+  });
+
   socket.on('disconnect', () => {
+    const consultationId = socket.data.consultationId;
+
+    if (consultationId) {
+      socket.to(consultationId).emit('end-call', {
+        consultationId,
+        senderSocketId: socket.id,
+        reason: 'disconnect',
+      });
+    }
+
+    clearSocketConsultation(socket);
     console.log(`Socket disconnected: ${socket.id}`);
   });
 });
